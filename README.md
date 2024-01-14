@@ -1,2 +1,2 @@
 # Association-Rules-project
-It is a repository containing my project regarding Unsupervised Learning methods: Association rules. The project can be viewed with hashtags_association.pdf
+It is a repository containing my project regarding Unsupervised Learning methods: Association rules. The project can be viewed with hashtags_association.pdf or by kniting the hahstags_association.Rmd
