@@ -1,0 +1,359 @@
+---
+title: "Image Clustering Project"
+author: "Maciej Kasztelanic"
+date: "Winter Semester 2023/2024 UL"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+# Analysis of hashtags used on Instagram
+
+The aim of this project is to find patterns in hashtag usage on
+instagram IT related posts. Using the Unsupervised learining apriori
+algorithm I will try to describe hidden regularities between the data.
+For this project I used "Instagram Reach"[^1] dataset from kaggle, which
+unfortunetly has no descrition.
+
+[^1]: <https://www.kaggle.com/code/vanvalkenberg/instagram-reach-eda-predictive-modelling/input>
+
+#### Libraries
+
+```{r, warning=F}
+library(pacman)
+p_load(dplyr, arules, arulesViz, arulesCBA, stringi, gridExtra)
+```
+
+#### Data
+
+```{r}
+data <- read.csv('instagram_reach.csv')
+names(data)
+data <- select(data, -X, -S.No, -Time.since.posted, -USERNAME)
+data_hashtags <- select(data, Hashtags)
+```
+
+The data need a lot of preperation:
+
+```{r}
+head(data, 3)
+```
+
+In order to perform quality analysis of the data I will preprocess it
+
+```{r}
+follow_interval <- c(0, 100, 200, 1000, 2000, Inf)
+follow_labels <- c("very small (<100)", "small (<200)", "medium (<1000)", "big (<2000)", "large (>2000)")
+data$Followers <- cut(data$Followers, breaks = follow_interval, labels = follow_labels, right = FALSE)
+
+like_interval <- c(0, 20, 50, 100, Inf)
+like_labels <- c('very low (<20)', 'low (<50)', 'medium (<100)', 'big (>100)')
+data$Likes <- cut(data$Likes, breaks = like_interval, labels = like_labels, right = FALSE)
+
+data$Caption <- nchar(data$Caption)
+data$Hashtags <- lengths(gregexpr("#", data$Hashtags))
+
+caption_interval <- c(0,50,200,Inf)
+caption_labels <- c('short (<50)', 'medium (<200)', 'long (>200)')
+data$Caption <- cut(data$Caption, breaks = caption_interval, labels = caption_labels, right = FALSE)
+
+hashtag_interval <- c(0,5,10,25, Inf)
+hashtag_labels <- c('low (<5)', 'medium (<10)', 'big (<25)', 'large (>25)')
+data$Hashtags <- cut(data$Hashtags, breaks = hashtag_interval, labels = hashtag_labels, right = FALSE)
+
+```
+
+With all of those columns now being categorical / interval I will be
+able to correctly create rules for this data set
+
+I also need to preprocess Hashtags as they come in one long string and i
+need them in a csv format (in the data there were many invisible signs
+used)
+
+```{r}
+data_hashtags$Hashtags <- tolower(data_hashtags$Hashtags)
+data_hashtags$Hashtags <- substr(data_hashtags$Hashtags, 2, nchar(data_hashtags$Hashtags))
+data_hashtags$Hashtags <- gsub(' ', '', data_hashtags$Hashtags)
+data_hashtags$Hashtags <- gsub(' #', ',', data_hashtags$Hashtags)
+data_hashtags$Hashtags <- gsub('#', ',', data_hashtags$Hashtags)
+data_hashtags$Hashtags <- gsub('
+', '', data_hashtags$Hashtags)
+data_hashtags$Hashtags <- gsub(' .', '', data_hashtags$Hashtags)
+data_hashtags$Hashtags <- gsub(']', '', data_hashtags$Hashtags)
+data_hashtags$Hashtags <- ifelse(substr(data_hashtags$Hashtags, 1, 1) == ",", substr(data_hashtags$Hashtags, 2, nchar(data_hashtags$Hashtags)), data_hashtags$Hashtags)
+```
+
+With such changes I can finally save them as a csv file and read as
+transactions:
+
+```{r}
+write.csv(data_hashtags, file = 'data_hashtags.csv', row.names = F, quote = F)
+hashtags <- read.transactions('data_hashtags.csv', format = 'basket', sep = ',', skip = 1)
+```
+
+```{r}
+cat("Number of observations in the dataset:", nrow(hashtags))
+cat("Number of years variables in the analysis:", ncol(hashtags))
+```
+
+```{r}
+summary(hashtags)
+```
+
+In the dataset there are 100 different rows (100 different posts) and
+1155 columns (1155 different hashtags used across all posts).The most
+frequently used onse are: - machinelearning - artificialintelligence -
+ai
+
+We can already see that most of the posts contain 29 - 30 hashtags which
+is considered a large amount. Hashtag usage ranges from 1 to 30 where as
+established earlier number of hashtags is considered: - low when \<5 -
+medium when \< 10 - big when \< 25 - large when \> 25
+
+```{r}
+inspect(hashtags[1:3])
+```
+
+To find which tags are used with what frequency we can plot it to a
+frequency plot:
+
+```{r}
+itemFrequencyPlot(hashtags, topN=20, type='relative', main='ItemFrequency')
+```
+
+```{r, echo=F}
+image(hashtags)
+```
+
+# Theory
+
+We can measure association between variables in 3 ways[^2]:
+
+1.  **Support** which tells how frequent an item occurs in the dataset,
+
+2.  **Confidence** which calculates the percentage of transactions where
+    the presence of a specific item or set of items corresponds to the
+    presence of another item or set of items,
+
+3.  **Lift** which is a measure of the strength of association between
+    two items, taking into account the frequency of both items in the
+    dataset.
+
+With those measures we can determine how good a rule explains events
+happening after eachother.
+
+For this study I will be using apriori algorithm Here's an overview of
+the Apriori algorithm:
+
+1.  Frequent Itemsets: The algorithm starts by identifying frequent
+    individual items in the dataset. An itemset is considered frequent
+    if it appears in a certain minimum number of transactions
+
+2.  Candidate Itemsets: From the frequent itemsets, the algorithm
+    generates candidate itemsets by combining items that appear together
+    in the dataset. These candidate itemsets are then tested for their
+    frequency
+
+3.  Support and Confidence: The support of a rule is the percentage of
+    transactions that contain both X and Y, while the confidence of a
+    rule is the percentage of transactions that contain X that also
+    contain Y
+
+4.  Pruning: To reduce the size of the search space, the algorithm uses
+    the Apriori property, which states that all non-empty subsets of a
+    frequent itemset must be frequent. This means that if an itemset is
+    infrequent, all its supersets will be infrequent as well
+
+5.  Lift: Lift is a measure of the strength of an association between
+    two items. It is calculated as the ratio of the confidence of a rule
+    to the support of the consequent item. A high lift value indicates a
+    strong association, while a value less than 1 indicates a weaker
+    association[^3]
+
+[^3]: <https://www.javatpoint.com/apriori-algorithm-in-machine-learning>
+
+# Apriori algorithm
+
+### rules for entire data set
+
+```{r, warning=F}
+rules<-apriori(hashtags, parameter=list(supp=0.05, conf=1)) 
+plot(rules, method="graph", measure="support", shading="lift", main="Rules")
+```
+
+There are 44 rules found with level of support = 0.05 and confidence
+= 1. We can clearly see that the hashtags are grouping themselfs. On the
+left side there are rules used in area of business, in the middle there
+is crypto currency and at the very right data related topics.
+
+```{r}
+summary(rules)
+```
+
+```{r}
+inspect(sort(rules, by = "support")[1:5])
+```
+
+```{r}
+inspect(sort(rules, by = "confidence")[1:5])
+```
+
+```{r}
+inspect(sort(rules, by = "lift")[1:5])
+```
+
+```{r}
+inspect(sort(rules, by = "count")[1:5])
+```
+
+We can see, that items with highest support and confidence are related
+to machinelearning, where the highest support = 11% is between
+deeplearning and machinelearning, which means the pair of those two
+hashtags appears in 11% of all posts.
+
+On the other hand the highest Lift is in hashtags related to
+cryptocurrencies A lift of 14.28 indicates that the occurrence of
+{cryptocurrency, ethereum} and {bitcoin} together is 14.28 times more
+than what would be expected if the occurrence of these hashtags was
+independent. This strong association suggests that posts or content
+related to cryptocurrency, ethereum, and bitcoin are highly likely to be
+connected or co-occur in the context of social media or online content
+
+## rhs and lhs analysis
+
+to perform association rules for left and right side lets first create
+funtions:
+
+```{r}
+generate_rules_rhs <- function(data, rhs_item, min_support = 0.01, min_confidence = 0.005) {
+  rules <- apriori(
+    data = data,
+    parameter = list(supp = min_support, conf = min_confidence),
+    appearance = list(default = "lhs", rhs = rhs_item),
+    control = list(verbose = FALSE)
+  )
+  rules_sorted <- sort(rules, by = "confidence", decreasing = TRUE)
+  return(rules_sorted)
+}
+
+generate_rules_lhs <- function(data, lhs_item, min_support = 0.01, min_confidence = 0.005) {
+  rules <- apriori(
+    data = data,
+    parameter = list(supp = min_support, conf = min_confidence),
+    appearance = list(default = "rhs", lhs = lhs_item),
+    control = list(verbose = FALSE)
+  )
+  rules_sorted <- sort(rules, by = "confidence", decreasing = TRUE)
+  return(rules_sorted)
+}
+```
+
+And now lets check both rhs and lhs rules for some hashtags
+
+```{r}
+rules_ai_rhs <- generate_rules_rhs(data = hashtags, rhs_item = 'ai',min_support = 0.05, min_confidence = 0.8)
+rules_ai_lhs <- generate_rules_lhs(data = hashtags, lhs_item = 'ai',min_support = 0.05, min_confidence = 0.8)
+
+rules_bitcoin_rhs <- generate_rules_rhs(data = hashtags, rhs_item = 'bitcoin',min_support = 0.05, min_confidence = 0.8)
+rules_bitcoin_lhs <- generate_rules_lhs(data = hashtags, lhs_item = 'bitcoin',min_support = 0.05, min_confidence = 0.8)
+
+rules_bigdata_rhs <- generate_rules_rhs(data = hashtags, rhs_item = 'bigdata',min_support = 0.05, min_confidence = 0.8)
+rules_bigdata_lhs <- generate_rules_lhs(data = hashtags, lhs_item = 'bigdata',min_support = 0.05, min_confidence = 0.8)
+
+rules_startup_rhs <- generate_rules_rhs(data = hashtags, rhs_item = 'startup',min_support = 0.05, min_confidence = 0.8)
+rules_startup_lhs <- generate_rules_lhs(data = hashtags, lhs_item = 'startup',min_support = 0.05, min_confidence = 0.8)
+```
+
+```{r}
+inspect(sort(rules_ai_rhs, by = "confidence"), linebreak = FALSE)
+inspect(sort(rules_ai_lhs, by = "confidence"), linebreak = FALSE)
+```
+
+```{r}
+inspect(sort(rules_bitcoin_rhs, by = "confidence"), linebreak = FALSE)
+inspect(sort(rules_bitcoin_lhs, by = "confidence"), linebreak = FALSE)
+```
+
+```{r}
+inspect(sort(rules_bigdata_rhs, by = "confidence"), linebreak = FALSE)
+inspect(sort(rules_bigdata_lhs, by = "confidence"), linebreak = FALSE)
+```
+
+```{r}
+inspect(sort(rules_startup_rhs, by = "confidence"), linebreak = FALSE)
+inspect(sort(rules_startup_lhs, by = "confidence"), linebreak = FALSE)
+```
+
+We can see that some hashtags have much more rules than the other, but
+all are selected to be confident at level of at least 80%.
+
+```{r echo=F}
+data <- data.frame(data)
+```
+
+## Rules for followers count
+
+Analysis above were only performed to find rules across hashtags, now I
+want to change the focus. I want to find whether the length of Caption
+or number of Hashtags has an impact on Follower count.
+
+Lets create rules for that:
+
+```{r}
+rules.followers <- apriori(data = data, parameter=list(supp=0.05,conf = 0.7))
+rules.followers.byconf <- sort(rules.followers, by="confidence", decreasing=T)
+inspect(rules.followers.byconf)
+```
+
+There are 11 rules but already with the highest confidence ([2]) we can
+see that with 83% confidence Posts that have long Caption and Large
+amount of Hashtags get low Likes.
+
+Let's plot the reulst:
+
+```{r}
+plot(rules.followers, method='paracoord', control=list(reorder=T))
+```
+
+```{r}
+plot(rules.followers, method="graph")
+```
+
+In the center we can see that both Big hashtag number and long caption
+lead to low Likes number.
+
+## Rules for large number of hashtags
+```{r}
+print(sum(data$Hashtags == 'large (>25)'))
+```
+In the dataset there is 44 posts with a large number of hashtags. Therefore we can check if many hashtags lead to higher number of followers or likes.
+```{r}
+large.hashtag.data <- data[data$Hashtags == 'large (>25)', ]
+rules.large.hashtag <- apriori(data = large.hashtag.data, parameter=list(supp=0.5,conf = 1))
+rules.large.hashtag.byconf <- sort(rules.large.hashtag, by="confidence", decreasing=T)
+inspect(rules.large.hashtag.byconf)
+```
+
+We see only three rules with confidence 1 so they appear in every example. What is interesting the large amount of hashtags being used dont lead to higher number of likes
+
+## Rules for low number of likes
+```{r}
+print(sum(data$Likes == 'very low (<20)'))
+```
+We can see 28 posts where the number of likes is low. Let's find out what rules posts that get under 20 likes follow.
+```{r}
+vlow.likes.data <- data[data$Likes == 'very low (<20)', ]
+rules.vlow.hashtag <- apriori(data = vlow.likes.data, parameter=list(supp=0.5,conf = 0.5))
+rules.vlow.hashtag.byconf <- sort(rules.vlow.hashtag, by="confidence", decreasing=T)
+inspect(rules.vlow.hashtag.byconf)
+```
+
+Again we can see, that hashtags don't influence the number of likes.
+
+```{r}
+plot(rules.vlow.hashtag, method="graph")
+```
+
+# Conclusion
+Understanding the hidden patterns in the data can provide insights that could have influence on our decisions, and with association rules we can achieve it. Apriori algorithms that can transform complex datasets into easily understandable outputs can be adventageous in various life or business settings. The data used in this project was used to find what hashtags people use when speaking of 'IT' topics on instagram. The paper also showed what some specifics of the post say about its outcome (in case of likes/follows). The used dataset was small with only 100 different posts, but in them there were 1157 different hashtags used. The study shows, that the most popular hashtags in the data were '#machinelearning' and '#artificialintelligence', which is strange as those are the longest.
