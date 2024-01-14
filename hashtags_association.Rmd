@@ -16,7 +16,7 @@ algorithm I will try to describe hidden regularities between the data.
 For this project I used "Instagram Reach"[^1] dataset from kaggle, which
 unfortunetly has no descrition.
 
-[^1]: <https://www.kaggle.com/code/vanvalkenberg/instagram-reach-eda-predictive-modelling/input>
+
 
 #### Libraries
 
@@ -171,7 +171,7 @@ the Apriori algorithm:
     strong association, while a value less than 1 indicates a weaker
     association[^3]
 
-[^3]: <https://www.javatpoint.com/apriori-algorithm-in-machine-learning>
+
 
 # Apriori algorithm
 
@@ -357,3 +357,7 @@ plot(rules.vlow.hashtag, method="graph")
 
 # Conclusion
 Understanding the hidden patterns in the data can provide insights that could have influence on our decisions, and with association rules we can achieve it. Apriori algorithms that can transform complex datasets into easily understandable outputs can be adventageous in various life or business settings. The data used in this project was used to find what hashtags people use when speaking of 'IT' topics on instagram. The paper also showed what some specifics of the post say about its outcome (in case of likes/follows). The used dataset was small with only 100 different posts, but in them there were 1157 different hashtags used. The study shows, that the most popular hashtags in the data were '#machinelearning' and '#artificialintelligence', which is strange as those are the longest.
+
+[^1]: <https://www.kaggle.com/code/vanvalkenberg/instagram-reach-eda-predictive-modelling/input>
+[^2]: <https://www.javatpoint.com/apriori-algorithm>
+[^3]: <https://www.javatpoint.com/apriori-algorithm-in-machine-learning>
